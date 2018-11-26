@@ -1,0 +1,237 @@
+#include <stdio.h>
+#include "uniqueOrderedList.h"
+#include <assert.h>
+#include <stdlib.h>
+
+
+typedef struct node{
+    Element nodeElement; // 'value' of current node
+    struct node* next; // address of next node in the list
+}*elementNode ;
+
+struct uniqueOrderedList_t{
+    elementNode Head ; // first node in the linked list
+    elementNode listIterator; // list iterator to go over the unique ordered list
+    copyElements copyFunc; //copy function of the unique ordered list
+    freeElements freeFunc; //free function of the unique ordered list
+    elementsEquals equalFunc; // function to check if 2 elements are equal
+    elementGreaterThan greaterThanFunc; // function to check if 1 element is great than the second
+};
+
+UniqueOrderedList uniqueOrderedListCreate(copyElements copyFunc, freeElements freeFunc, elementsEquals equalFunc, elementGreaterThan greaterThanFunc){
+    if (!copyFunc || !freeFunc || !equalFunc || !greaterThanFunc){ // checks if one of the argument is NULL, if so, returns NULL
+        return NULL;
+    }
+    UniqueOrderedList uniqueOrderedList = malloc (sizeof(struct uniqueOrderedList_t));
+    if (!uniqueOrderedList){
+        return NULL;
+    }
+    uniqueOrderedList ->copyFunc = copyFunc; // setting each of the users funcs into the structs matches field
+    uniqueOrderedList -> freeFunc = freeFunc;
+    uniqueOrderedList -> equalFunc = equalFunc;
+    uniqueOrderedList -> greaterThanFunc = greaterThanFunc;
+    uniqueOrderedList->Head = malloc(sizeof(struct node)); // dynamic allocation for the first node in the linked list
+    //so it will be on the heap
+    if (uniqueOrderedList->Head == NULL){ // checks if the allocation failed
+        free(uniqueOrderedList);
+        return NULL;
+    }
+    uniqueOrderedList->Head->nodeElement = NULL;
+    uniqueOrderedList->Head->next=  NULL ;
+    uniqueOrderedList -> listIterator = malloc (sizeof(struct node)); // the iterator is not valid after calling this func.
+    if (uniqueOrderedList->listIterator == NULL){
+        free(uniqueOrderedList->Head);
+        free(uniqueOrderedList);
+        return NULL;
+    }
+    return uniqueOrderedList;
+}
+// removing each node from the first until the last, free the uniqueorderedlist
+void uniqueOrderedListDestroy(UniqueOrderedList uniqueOrderedList){
+    while (uniqueOrderedListGetLowest(uniqueOrderedList)){ // while the first node in the linked list isn't NULL
+        assert (uniqueOrderedList->listIterator -> nodeElement != NULL);
+        Element temp = uniqueOrderedList->listIterator -> nodeElement; // make a temp copy for the value of the cur node
+        uniqueOrderedListGetNext(uniqueOrderedList); // advancing the iterator to the next node
+        UniqueOrderedListResult result = uniqueOrderedListRemove(uniqueOrderedList, temp); // removing the cur node
+        assert (result == UNIQUE_ORDERED_LIST_SUCCESS );
+    }
+    free (uniqueOrderedList);
+}
+// copies a uniqueorderedlist by allocate a new list and copying each of every node on the linked list from the first to the last
+UniqueOrderedList uniqueOrderedListCopy(UniqueOrderedList uniqueOrderedList){
+    UniqueOrderedList copyUniqueOrderedList = uniqueOrderedListCreate(uniqueOrderedList->copyFunc, uniqueOrderedList->freeFunc, uniqueOrderedList->equalFunc,uniqueOrderedList->greaterThanFunc);
+    //create a new uniqueOrderedList with the same func that the user made
+    uniqueOrderedListGetLowest(uniqueOrderedList); // setting old iterator as head
+    copyUniqueOrderedList->Head->nodeElement = uniqueOrderedList->copyFunc(uniqueOrderedList->Head->nodeElement); //setting value of new head as value of old head
+    copyUniqueOrderedList->listIterator=copyUniqueOrderedList->Head; // setting new iterator as new head
+    uniqueOrderedListGetNext(uniqueOrderedList);  // advancing old iterator
+    while(uniqueOrderedList->listIterator!=NULL){ // going through old list
+        elementNode temp = malloc (sizeof(struct node)); // creating new nodes for new list
+        if (temp == NULL){
+            uniqueOrderedListDestroy(copyUniqueOrderedList);
+            return NULL;
+        }
+        if(uniqueOrderedList->listIterator->next==NULL){ // checking if we reached the end of the list
+            copyUniqueOrderedList->listIterator->next=NULL;
+        }
+        temp->nodeElement=uniqueOrderedList->copyFunc(uniqueOrderedList->listIterator->nodeElement); // setting new node values as old node values
+        copyUniqueOrderedList->listIterator->next=temp; // putting new node's next as the address of the next node
+        uniqueOrderedListGetNext(uniqueOrderedList); // advancing old iterator
+        uniqueOrderedListGetNext(copyUniqueOrderedList); // advancing new iterator
+    }
+    return copyUniqueOrderedList;
+
+}
+
+int uniqueOrderedListSize(UniqueOrderedList uniqueOrderedList){
+    if(uniqueOrderedList == NULL){ // checks if the list is NULL
+        return -1;
+    }
+    if (uniqueOrderedList->Head->nodeElement == NULL){
+        return 0;
+    }
+    int counter = 0;
+    uniqueOrderedListGetLowest(uniqueOrderedList); // setting the list iterator to the first node on the linked list
+    while(uniqueOrderedList->listIterator != NULL){ // running until the next node is NULL (the last node)
+        counter++; // counting the nodes
+        uniqueOrderedListGetNext(uniqueOrderedList); // advancing the iterator to the next node
+    }
+    return counter;
+}
+
+bool uniqueOrderedListContains(UniqueOrderedList uniqueOrderedList, Element element1){
+    if (uniqueOrderedListSize(uniqueOrderedList) == 0){
+        return false;
+    }
+    uniqueOrderedListGetLowest(uniqueOrderedList); // setting the iterator to the first node on the linked list
+    while(uniqueOrderedList->listIterator!= NULL){ // running until the last node
+        if (uniqueOrderedList->equalFunc(uniqueOrderedList->listIterator->nodeElement,element1)){ // checks if the cur node is equal to the provided node
+            return true;
+        }
+        uniqueOrderedListGetNext(uniqueOrderedList);// advancing the iterator to the next node
+    }
+    return false; // if we went through the whole linked list and non of the nodes are equal to the provided element
+}
+
+UniqueOrderedListResult uniqueOrderedListInsert(UniqueOrderedList uniqueOrderedList, Element element1){
+    if (!uniqueOrderedList || !element1){ // checks if one of the argument is null
+        return UNIQUE_ORDERED_LIST_NULL_ARGUMENT;
+    }
+    if (uniqueOrderedListContains(uniqueOrderedList, element1)){ // checks if there is an existing element on the list that's equal to the provided element
+        return UNIQUE_ORDERED_LIST_ITEM_ALREADY_EXISTS;
+    }
+    if (uniqueOrderedListSize(uniqueOrderedList) == 0){
+        uniqueOrderedList->Head->nodeElement = uniqueOrderedList->copyFunc(element1);
+        return  UNIQUE_ORDERED_LIST_SUCCESS;
+    }
+    uniqueOrderedListGetLowest(uniqueOrderedList); // setting the iterator to the first node on the linked list
+    while (uniqueOrderedList->listIterator != NULL){ // running until the last node or if the correct place for the element has found
+        if(uniqueOrderedList->greaterThanFunc(element1,uniqueOrderedList->listIterator->nodeElement)){
+            uniqueOrderedListGetNext(uniqueOrderedList);
+        } else {
+            elementNode new_element = malloc (sizeof(struct node));
+            if (new_element == NULL){
+                return UNIQUE_ORDERED_LIST_NULL_ARGUMENT;
+            }
+            new_element->nodeElement = uniqueOrderedList->copyFunc(uniqueOrderedList->listIterator->nodeElement);
+            new_element->next = uniqueOrderedList->listIterator->next;
+            uniqueOrderedList->listIterator->nodeElement =uniqueOrderedList->copyFunc (element1);
+            uniqueOrderedList->listIterator->next = new_element;
+            if (uniqueOrderedList->equalFunc(uniqueOrderedListGetGreatest(uniqueOrderedList),element1)){ //checking if we reached the end of the lists
+                uniqueOrderedList->listIterator->next=NULL;
+            }
+            return UNIQUE_ORDERED_LIST_SUCCESS; // successful insert
+        }
+    }
+    return UNIQUE_ORDERED_LIST_SUCCESS;
+}
+
+
+UniqueOrderedListResult uniqueOrderedListRemove(UniqueOrderedList uniqueOrderList, Element element1){
+    if (!uniqueOrderList || !element1){ // checking if one of the variables we received is a null
+        return UNIQUE_ORDERED_LIST_NULL_ARGUMENT; // returning error
+    }
+    if (uniqueOrderList->equalFunc(element1,uniqueOrderList->Head->nodeElement)){ //checking if the element is equal to the head's value
+        elementNode tempHead=uniqueOrderList->Head; // setting a temp head so we can change the head
+        uniqueOrderList->Head=uniqueOrderList->Head->next; // setting the new head
+        uniqueOrderList->freeFunc(tempHead->nodeElement); // removing old head (value we received
+        free(tempHead); // freeing tempHead
+        return UNIQUE_ORDERED_LIST_SUCCESS ; // successful removal
+    }
+    if (uniqueOrderedListGetLowest(uniqueOrderList)==NULL){ //setting iterator to lowest element
+        return UNIQUE_ORDERED_LIST_NULL_ARGUMENT; // in case of error
+    }
+    elementNode temp=uniqueOrderList->listIterator->next; // setting up temp to be at the next node of the iterator
+    while (uniqueOrderList->greaterThanFunc(element1,temp->nodeElement)){ //while received element is greater, we keep searching
+        if (!temp){ //if we reached a null, the item does not exist
+            return UNIQUE_ORDERED_LIST_ITEM_DOES_NOT_EXIST;
+        }
+        if (uniqueOrderedListGetNext(uniqueOrderList)==NULL){ // advancing the iterator
+            return UNIQUE_ORDERED_LIST_NULL_ARGUMENT; // in case of error
+        }
+        temp=uniqueOrderList->listIterator->next; // getting the next element in the list
+    }
+    //if we got here, element1==temp or element1<temp, in the element terms
+    assert(uniqueOrderList->greaterThanFunc(temp->nodeElement,element1) || uniqueOrderList->equalFunc(temp->nodeElement,element1));
+    if (uniqueOrderList->equalFunc(temp->nodeElement,element1)){ // if this is true, we found the element to remove
+        uniqueOrderList->listIterator->next=temp->next ; // setting next node of iterator's place as the next node's next
+        uniqueOrderList->freeFunc(temp->nodeElement); // freeing temp
+        free(temp); // removing the node
+        return UNIQUE_ORDERED_LIST_SUCCESS ; // successful removal
+    }
+    //if we got here, there is no element in the list that is equal to the element we recieved
+    return UNIQUE_ORDERED_LIST_ITEM_DOES_NOT_EXIST;
+}
+
+Element uniqueOrderedListGetLowest(UniqueOrderedList uniqueOrderedList){
+    if (!uniqueOrderedList ||uniqueOrderedList->Head==NULL || uniqueOrderedList->Head->nodeElement == NULL ){ // checking if we got a null pointer or size is 0
+        return NULL ;  // returning NULL if 1 of the 2 happens
+    }
+    //if we got here, our list is valid
+    uniqueOrderedList->listIterator=uniqueOrderedList->Head; // setting list iterator to be the first node in the list
+    return uniqueOrderedList->listIterator->nodeElement; // returning first element
+}
+
+Element uniqueOrderedListGetGreatest(UniqueOrderedList uniqueOrderedList){
+    if (!uniqueOrderedList || uniqueOrderedListSize(uniqueOrderedList)==0){ // checking if we got a null pointer or size is 0
+        return NULL ;  // returning NULL if 1 of the 2 happens
+    }
+    //if we got here, our list is valid
+    if (uniqueOrderedListGetLowest(uniqueOrderedList)==NULL){  // setting the interator as the first node
+        return NULL; // in case of error
+    }
+    while (uniqueOrderedList->listIterator->next!=NULL){ //while we have yet to reach the end of the linked list
+        if(uniqueOrderedListGetNext(uniqueOrderedList)==NULL){  // advancing the list iterator
+            return NULL ; // in case of error
+        }
+    }
+    // if we got here it means we are at the last node
+    return uniqueOrderedList->listIterator->nodeElement; //returning last element
+}
+
+Element uniqueOrderedListGetNext(UniqueOrderedList uniqueOrderedList){
+    if (uniqueOrderedList->listIterator==NULL  || !uniqueOrderedList){ //checking for possible errors
+        return NULL;
+    }
+    uniqueOrderedList->listIterator=uniqueOrderedList->listIterator->next; //advancing the list iterator
+    if (uniqueOrderedList->listIterator==NULL){ // if we reached the end of the lists
+        return NULL;
+    }
+    return uniqueOrderedList->listIterator->nodeElement ; // returning the next element
+}
+
+void uniqueOrderedListClear(UniqueOrderedList uniqueOrderedList){
+    if (!uniqueOrderedList){ // invalid variable received
+        return;
+    }
+    if(uniqueOrderedListGetLowest(uniqueOrderedList)==NULL){ // setting iterator to the first node
+        return;
+    }
+
+    while(uniqueOrderedList->listIterator!=NULL){
+        elementNode temp=uniqueOrderedList->listIterator->next; // setting a temp so we can access the next node
+        uniqueOrderedListRemove(uniqueOrderedList ,uniqueOrderedList->listIterator->nodeElement ) ; // removing the current element
+        uniqueOrderedList->listIterator=temp ;  // setting iterator as the next node
+    }
+
+}
